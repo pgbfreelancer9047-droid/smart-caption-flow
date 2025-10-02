@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Mic, MicOff, Volume2 } from "lucide-react";
-import { useToast } from "@/components/ui/use-toast";
+import { useToast } from "@/hooks/use-toast";
 
 interface VoiceInputProps {
   onTranscript: (text: string, isFinal: boolean) => void;
@@ -13,6 +13,7 @@ const VoiceInput = ({ onTranscript, selectedLanguage }: VoiceInputProps) => {
   const [isListening, setIsListening] = useState(false);
   const [isSupported, setIsSupported] = useState(true);
   const recognitionRef = useRef<any>(null);
+  const restartTimeoutRef = useRef<any>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -20,22 +21,26 @@ const VoiceInput = ({ onTranscript, selectedLanguage }: VoiceInputProps) => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     
     if (!SpeechRecognition) {
+      console.log("Speech Recognition not supported");
       setIsSupported(false);
-      toast({
-        title: "Not Supported",
-        description: "Your browser doesn't support speech recognition. Please use Chrome or Edge.",
-        variant: "destructive",
-      });
       return;
     }
+
+    console.log("Initializing Speech Recognition with language:", selectedLanguage);
 
     // Initialize Speech Recognition
     const recognition = new SpeechRecognition();
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = selectedLanguage;
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => {
+      console.log("Speech recognition started");
+    };
 
     recognition.onresult = (event: any) => {
+      console.log("Got speech result");
       let interimTranscript = "";
       let finalTranscript = "";
 
@@ -49,66 +54,109 @@ const VoiceInput = ({ onTranscript, selectedLanguage }: VoiceInputProps) => {
       }
 
       if (finalTranscript) {
+        console.log("Final transcript:", finalTranscript);
         onTranscript(finalTranscript.trim(), true);
       } else if (interimTranscript) {
+        console.log("Interim transcript:", interimTranscript);
         onTranscript(interimTranscript.trim(), false);
       }
     };
 
     recognition.onerror = (event: any) => {
-      console.error("Speech recognition error:", event.error);
-      if (event.error === "not-allowed") {
+      console.error("Speech recognition error:", event.error, event);
+      
+      // Clear any pending restart
+      if (restartTimeoutRef.current) {
+        clearTimeout(restartTimeoutRef.current);
+      }
+
+      if (event.error === "not-allowed" || event.error === "permission-denied") {
         toast({
           title: "Microphone Access Denied",
           description: "Please allow microphone access to use voice input.",
           variant: "destructive",
         });
+        setIsListening(false);
       } else if (event.error === "no-speech") {
-        // This is normal, just restart
-        if (isListening) {
-          recognition.start();
-        }
-      } else {
+        console.log("No speech detected, will restart if still listening");
+        // Don't show error for no-speech, it's normal
+      } else if (event.error === "aborted") {
+        console.log("Recognition aborted");
+        // Normal abort, don't show error
+      } else if (event.error === "network") {
         toast({
-          title: "Recognition Error",
-          description: `Error: ${event.error}`,
+          title: "Network Error",
+          description: "Please check your internet connection and try again.",
           variant: "destructive",
         });
+        setIsListening(false);
+      } else {
+        console.log("Other error:", event.error);
+        toast({
+          title: "Recognition Error",
+          description: `Error: ${event.error}. Try restarting voice input.`,
+          variant: "destructive",
+        });
+        setIsListening(false);
       }
-      setIsListening(false);
     };
 
     recognition.onend = () => {
-      if (isListening) {
-        // Automatically restart if still supposed to be listening
-        try {
-          recognition.start();
-        } catch (e) {
-          console.log("Recognition restart failed:", e);
-        }
+      console.log("Speech recognition ended");
+      
+      // Clear any pending restart
+      if (restartTimeoutRef.current) {
+        clearTimeout(restartTimeoutRef.current);
+      }
+
+      // Only restart if we're supposed to be listening
+      if (isListening && recognitionRef.current) {
+        console.log("Attempting to restart recognition...");
+        // Add small delay before restart to avoid conflicts
+        restartTimeoutRef.current = setTimeout(() => {
+          try {
+            recognitionRef.current?.start();
+            console.log("Recognition restarted successfully");
+          } catch (e) {
+            console.error("Failed to restart recognition:", e);
+            setIsListening(false);
+          }
+        }, 100);
       }
     };
 
     recognitionRef.current = recognition;
 
     return () => {
+      console.log("Cleaning up Speech Recognition");
+      if (restartTimeoutRef.current) {
+        clearTimeout(restartTimeoutRef.current);
+      }
       if (recognitionRef.current) {
-        recognitionRef.current.stop();
+        recognitionRef.current.abort();
       }
     };
-  }, [selectedLanguage, onTranscript, toast]);
+  }, [selectedLanguage, isListening, onTranscript, toast]);
 
   const toggleListening = () => {
-    if (!isSupported || !recognitionRef.current) return;
+    if (!isSupported || !recognitionRef.current) {
+      console.log("Cannot toggle - not supported or not initialized");
+      return;
+    }
 
     if (isListening) {
-      recognitionRef.current.stop();
+      console.log("Stopping recognition");
+      if (restartTimeoutRef.current) {
+        clearTimeout(restartTimeoutRef.current);
+      }
+      recognitionRef.current.abort();
       setIsListening(false);
       toast({
         title: "Stopped Listening",
         description: "Voice input stopped",
       });
     } else {
+      console.log("Starting recognition");
       try {
         recognitionRef.current.start();
         setIsListening(true);
@@ -116,11 +164,11 @@ const VoiceInput = ({ onTranscript, selectedLanguage }: VoiceInputProps) => {
           title: "Listening...",
           description: "Speak now to generate captions",
         });
-      } catch (error) {
+      } catch (error: any) {
         console.error("Error starting recognition:", error);
         toast({
           title: "Error",
-          description: "Failed to start voice input",
+          description: error.message || "Failed to start voice input. Make sure microphone access is allowed.",
           variant: "destructive",
         });
       }
