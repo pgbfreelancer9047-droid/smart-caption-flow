@@ -1,60 +1,37 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Play, Pause } from "lucide-react";
-
-const demoTexts = [
-  {
-    original: "The quantum entanglement phenomenon demonstrates non-local correlations between particles.",
-    simplified: "Quantum particles can be connected even when far apart.",
-    translations: {
-      hindi: "क्वांटम कण दूर होने पर भी जुड़े रह सकते हैं।",
-      tamil: "குவாண்டம் துகள்கள் தொலைவில் இருந்தாலும் இணைக்கப்பட்டிருக்கும்."
-    }
-  },
-  {
-    original: "The implementation of sustainable development requires comprehensive policy frameworks.",
-    simplified: "Building a sustainable future needs good planning and rules.",
-    translations: {
-      hindi: "सतत भविष्य के लिए अच्छी योजना और नियम चाहिए।",
-      tamil: "நிலையான எதிர்காலத்திற்கு நல்ல திட்டமிடல் தேவை."
-    }
-  }
-];
+import { Mic } from "lucide-react";
+import VoiceInput from "./VoiceInput";
 
 const LiveDemo = () => {
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [displayedText, setDisplayedText] = useState("");
-  const [selectedLanguage, setSelectedLanguage] = useState<"english" | "hindi" | "tamil">("english");
+  const [captions, setCaptions] = useState<Array<{ text: string; isFinal: boolean; timestamp: number }>>([]);
+  const [selectedLanguage, setSelectedLanguage] = useState<"en-US" | "hi-IN" | "ta-IN">("en-US");
 
-  const currentDemo = demoTexts[currentIndex];
+  const handleTranscript = (text: string, isFinal: boolean) => {
+    const timestamp = Date.now();
+    
+    if (isFinal) {
+      // Add as final caption
+      setCaptions(prev => {
+        // Remove any interim captions and add this final one
+        const filtered = prev.filter(c => c.isFinal);
+        return [...filtered, { text, isFinal: true, timestamp }].slice(-10); // Keep last 10 captions
+      });
+    } else {
+      // Update or add interim caption
+      setCaptions(prev => {
+        const filtered = prev.filter(c => c.isFinal);
+        return [...filtered, { text, isFinal: false, timestamp }];
+      });
+    }
+  };
 
-  useEffect(() => {
-    if (!isPlaying) return;
-
-    const text = selectedLanguage === "english" 
-      ? currentDemo.simplified 
-      : currentDemo.translations[selectedLanguage];
-
-    let charIndex = 0;
-    setDisplayedText("");
-
-    const interval = setInterval(() => {
-      if (charIndex < text.length) {
-        setDisplayedText(text.slice(0, charIndex + 1));
-        charIndex++;
-      } else {
-        clearInterval(interval);
-        setTimeout(() => {
-          setCurrentIndex((prev) => (prev + 1) % demoTexts.length);
-          setDisplayedText("");
-        }, 2000);
-      }
-    }, 50);
-
-    return () => clearInterval(interval);
-  }, [isPlaying, currentIndex, selectedLanguage]);
+  const languageMap = {
+    "en-US": { display: "English", code: "en-US" },
+    "hi-IN": { display: "हिंदी", code: "hi-IN" },
+    "ta-IN": { display: "தமிழ்", code: "ta-IN" },
+  };
 
   return (
     <section className="py-24 bg-background">
@@ -63,87 +40,103 @@ const LiveDemo = () => {
           <div className="text-center mb-12 animate-fade-in">
             <h2 className="text-4xl md:text-5xl font-bold mb-6">
               <span className="bg-gradient-secondary bg-clip-text text-transparent">
-                See It In Action
+                Real-Time Voice Captioning
               </span>
             </h2>
             <p className="text-lg text-muted-foreground">
-              Watch how complex speech is transformed into simple, accessible captions
+              Speak into your microphone and watch live captions appear instantly
             </p>
           </div>
 
           <div className="space-y-6">
-            {/* Original Text Display */}
-            <Card className="p-6 bg-muted/50 border-2 border-border">
-              <div className="space-y-2">
+            {/* Language Selection */}
+            <Card className="p-6 bg-card/80 backdrop-blur-sm border-2 border-border">
+              <div className="flex flex-col gap-4">
                 <div className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-                  Original Speech
+                  Select Language
                 </div>
-                <p className="text-lg text-foreground/70 italic">
-                  "{currentDemo.original}"
-                </p>
+                <div className="flex gap-2 flex-wrap">
+                  {Object.entries(languageMap).map(([key, lang]) => (
+                    <Button
+                      key={key}
+                      size="sm"
+                      variant={selectedLanguage === key ? "default" : "ghost"}
+                      onClick={() => setSelectedLanguage(key as "en-US" | "hi-IN" | "ta-IN")}
+                    >
+                      {lang.display}
+                    </Button>
+                  ))}
+                </div>
               </div>
+            </Card>
+
+            {/* Voice Input Controls */}
+            <Card className="p-8 bg-card/80 backdrop-blur-sm border-2 border-primary/20">
+              <VoiceInput 
+                onTranscript={handleTranscript}
+                selectedLanguage={selectedLanguage}
+              />
             </Card>
 
             {/* Live Caption Display */}
-            <Card className="p-8 bg-gradient-to-br from-card to-card/50 border-2 border-primary/30 shadow-glow min-h-[180px] flex items-center justify-center">
-              <div className="space-y-4 w-full">
+            <Card className="p-8 bg-gradient-to-br from-card to-card/50 border-2 border-primary/30 shadow-glow min-h-[240px]">
+              <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <div className="text-sm font-semibold text-primary uppercase tracking-wide flex items-center gap-2">
                     <div className="w-2 h-2 rounded-full bg-secondary animate-pulse" />
-                    Live Caption ({selectedLanguage})
+                    Live Captions ({languageMap[selectedLanguage].display})
                   </div>
-                  <div className="flex gap-2">
+                  {captions.length > 0 && (
                     <Button
                       size="sm"
-                      variant={selectedLanguage === "english" ? "default" : "ghost"}
-                      onClick={() => setSelectedLanguage("english")}
+                      variant="ghost"
+                      onClick={() => setCaptions([])}
                     >
-                      English
+                      Clear
                     </Button>
-                    <Button
-                      size="sm"
-                      variant={selectedLanguage === "hindi" ? "default" : "ghost"}
-                      onClick={() => setSelectedLanguage("hindi")}
-                    >
-                      हिंदी
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant={selectedLanguage === "tamil" ? "default" : "ghost"}
-                      onClick={() => setSelectedLanguage("tamil")}
-                    >
-                      தமிழ்
-                    </Button>
-                  </div>
+                  )}
                 </div>
-                <p className="text-2xl md:text-3xl font-semibold text-foreground leading-relaxed min-h-[80px]">
-                  {displayedText}
-                  {isPlaying && <span className="animate-pulse">|</span>}
-                </p>
+                
+                <div className="space-y-3 max-h-[400px] overflow-y-auto">
+                  {captions.length === 0 ? (
+                    <p className="text-xl text-muted-foreground text-center py-12">
+                      Click "Start Voice Input" and begin speaking...
+                    </p>
+                  ) : (
+                    captions.map((caption, index) => (
+                      <div
+                        key={`${caption.timestamp}-${index}`}
+                        className={`text-xl md:text-2xl font-semibold leading-relaxed transition-all duration-300 ${
+                          caption.isFinal 
+                            ? 'text-foreground' 
+                            : 'text-foreground/60 italic'
+                        }`}
+                      >
+                        {caption.text}
+                        {!caption.isFinal && <span className="animate-pulse">|</span>}
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             </Card>
 
-            {/* Controls */}
-            <div className="flex justify-center">
-              <Button
-                variant="hero"
-                size="lg"
-                onClick={() => setIsPlaying(!isPlaying)}
-                className="group"
-              >
-                {isPlaying ? (
-                  <>
-                    <Pause className="w-5 h-5" />
-                    Pause Demo
-                  </>
-                ) : (
-                  <>
-                    <Play className="w-5 h-5" />
-                    Start Demo
-                  </>
-                )}
-              </Button>
-            </div>
+            {/* Info Card */}
+            <Card className="p-6 bg-muted/30 border border-border">
+              <div className="flex items-start gap-3">
+                <div className="p-2 rounded-lg bg-primary/10">
+                  <Mic className="w-5 h-5 text-primary" />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="font-semibold text-foreground">How it works</h3>
+                  <p className="text-sm text-muted-foreground">
+                    This demo uses your browser's built-in speech recognition. Click the microphone button, 
+                    allow access, and start speaking. Captions will appear in real-time as you talk.
+                    Works best in Chrome or Edge browsers.
+                  </p>
+                </div>
+              </div>
+            </Card>
           </div>
         </div>
       </div>
